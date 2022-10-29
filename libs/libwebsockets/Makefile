@@ -46,7 +46,6 @@ define Package/libwebsockets/Default
 	DEPENDS:=+zlib +libcap
 	URL:=https://libwebsockets.org
 	MAINTAINER:=Karl Palsson <karlp@etactica.com>
-	PROVIDES:= libwebsockets
 endef
 
 define Package/libwebsockets-openssl
@@ -54,6 +53,7 @@ define Package/libwebsockets-openssl
 	TITLE += (OpenSSL)
 	DEPENDS += +libopenssl
 	VARIANT:=openssl
+	CONFLICTS:=libwebsockets-full
 endef
 
 define Package/libwebsockets-mbedtls
@@ -61,6 +61,8 @@ define Package/libwebsockets-mbedtls
 	TITLE += (mbedTLS)
 	DEPENDS += +libmbedtls
 	VARIANT:=mbedtls
+	PROVIDES:=libwebsockets
+	CONFLICTS:=libwebsockets-openssl
 endef
 
 define Package/libwebsockets-full
@@ -68,6 +70,7 @@ define Package/libwebsockets-full
 	TITLE += (Full - OpenSSL, libuv, plugins, CGI)
 	DEPENDS += +libopenssl +libuv
 	VARIANT:=full
+	PROVIDES:=libwebsockets libwebsockets-openssl
 endef
 
 ifeq ($(BUILD_VARIANT),openssl)
