@@ -11,7 +11,7 @@ PKG_RELEASE:=1
 PKG_SOURCE:=rustc-$(PKG_VERSION)-src.tar.gz
 PKG_SOURCE_URL:=https://static.rust-lang.org/dist/
 PKG_HASH:=eaf4d8b19f23a232a4770fb53ab5e7acdedec11da1d02b0e5d491ca92ca96d62
-HOST_BUILD_DIR:=$(BUILD_DIR_HOST)/rustc-$(PKG_VERSION)-src/
+HOST_BUILD_DIR:=$(BUILD_DIR_HOST)/rustc-$(PKG_VERSION)-src
 
 PKG_MAINTAINER:=Luca Barbato <lu_zero@luminem.org>
 PKG_LICENSE:=Apache-2.0 MIT
@@ -20,17 +20,24 @@ PKG_LICENSE_FILES:=LICENSE-APACHE LICENSE-MIT
 HOST_BUILD_DEPENDS:=python3/host
 PKG_HOST_ONLY:=1
 
-include $(INCLUDE_DIR)/package.mk
 include $(INCLUDE_DIR)/host-build.mk
+include $(INCLUDE_DIR)/package.mk
+include ./rust-values.mk
 
-# rust environment variables
-include ./rust-host.mk
+define Package/rust
+  SECTION:=lang
+  CATEGORY:=Languages
+  SUBMENU:=Rust
+  TITLE:=Rust Programming Language Compiler
+  URL:=https://www.rust-lang.org/
+  DEPENDS:=$(RUST_ARCH_DEPENDS)
+endef
 
-# Rust Temp Directory
-RUST_TMP_DIR:=$(TMP_DIR)/rust-install
-
-RUST_INSTALL_HOST_FILENAME:=$(PKG_NAME)-$(PKG_VERSION)-$(RUSTC_HOST_ARCH)-install.tar.xz
-RUST_INSTALL_TARGET_FILENAME:=$(PKG_NAME)-$(PKG_VERSION)-$(RUSTC_TARGET_ARCH)-install.tar.xz
+define Package/rust/description
+  Rust is a multi-paradigm, general-purpose programming language designed for performance
+  and safety, especially safe concurrency. Rust is syntactically similar to C++, but can
+  guarantee memory safety by using a borrow checker to validate references.
+endef
 
 # Rust-lang has an uninstall script
 RUST_UNINSTALL:=$(CARGO_HOME)/lib/rustlib/uninstall.sh
@@ -41,8 +48,8 @@ TARGET_CONFIGURE_ARGS = \
 	--set=target.$(RUSTC_TARGET_ARCH).cc=$(TARGET_CC_NOCACHE) \
 	--set=target.$(RUSTC_TARGET_ARCH).cxx=$(TARGET_CXX_NOCACHE) \
 	--set=target.$(RUSTC_TARGET_ARCH).linker=$(TARGET_CC_NOCACHE) \
-	--set=target.$(RUSTC_TARGET_ARCH).musl-root=$(TOOLCHAIN_DIR) \
-	--set=target.$(RUSTC_TARGET_ARCH).ranlib=$(TARGET_RANLIB)
+	--set=target.$(RUSTC_TARGET_ARCH).ranlib=$(TARGET_RANLIB) \
+	$(if $(CONFIG_USE_MUSL),--set=target.$(RUSTC_TARGET_ARCH).musl-root=$(TOOLCHAIN_DIR))
 
 # CARGO_HOME is an environmental
 HOST_CONFIGURE_OPTS += CARGO_HOME="$(CARGO_HOME)"
@@ -59,82 +66,38 @@ HOST_CONFIGURE_ARGS = \
 	--datadir=$(CARGO_HOME)/share \
 	--mandir=$(CARGO_HOME)/man \
 	--dist-compression-formats=xz \
-	--enable-llvm-link-shared \
-	--enable-llvm-plugins \
 	--enable-missing-tools \
-	--enable-ninja \
 	--disable-sanitizers \
 	--release-channel=stable \
 	--enable-cargo-native-static \
+	--set=llvm.download-ci-llvm=true \
 	$(TARGET_CONFIGURE_ARGS)
-
-define Host/Prepare
-	# Ensure rust temp directory
-	[ -d $(RUST_TMP_DIR) ] || \
-	  mkdir -p $(RUST_TMP_DIR)
-
-	$(call Host/Prepare/Default)
-endef
 
 define Host/Uninstall
 	# Call the Uninstall script
 	[ -f $(RUST_UNINSTALL) ] && \
-	  $(BASH) $(RUST_UNINSTALL) || echo No Uninstall
-
-	rm -rf $(RUST_TMP_DIR)
+		$(BASH) $(RUST_UNINSTALL) || echo No Uninstall
 endef
 
-# Makes and then packages the dist artifacts
 define Host/Compile
-	cd $(HOST_BUILD_DIR) && \
-	  $(PYTHON) x.py --config ./config.toml dist build-manifest cargo llvm-tools \
-	    rustc rust-std rust-src
-
-	$(call Host/PackageDist)
-endef
-
-# Distribution Artifacts are packaged by Host/PackageDist
-# We just need to extract and install
-define Host/Install
-	$(TAR) -C $(RUST_TMP_DIR) -xJf $(DL_DIR)/$(RUST_INSTALL_HOST_FILENAME) && \
-	$(TAR) -C $(RUST_TMP_DIR) -xJf $(DL_DIR)/$(RUST_INSTALL_TARGET_FILENAME)
-
-	cd $(RUST_TMP_DIR) && \
-	  find -iname "*.xz" -exec tar -xJf {} ";" && \
-	  find ./* -type f -name install.sh -execdir sh {} --prefix=$(CARGO_HOME) --disable-ldconfig \;
-
-	echo -e "[target.$(RUSTC_TARGET_ARCH)]\nlinker = \"$(TARGET_CC_NOCACHE)\"\nrustflags = [\"-Ctarget-feature=-crt-static\", \"-Clink-args=$(RUSTC_LDFLAGS)\"]" > $(CARGO_HOME)/config
-	echo -e "\n[profile.stripped]\ninherits = \"release\"\nopt-level = \"s\"\nstrip = true" >> $(CARGO_HOME)/config
-endef
-
-# Packages the Distribution Artifacts into HOST and TARGET bundles.
-define Host/PackageDist
 	( \
-		cd $(HOST_BUILD_DIR)/build/dist ; \
-		$(TAR) -cJf $(DL_DIR)/$(RUST_INSTALL_TARGET_FILENAME) \
-			rust-*-$(RUSTC_TARGET_ARCH).tar.xz ; \
-		$(TAR) -cJf $(DL_DIR)/$(RUST_INSTALL_HOST_FILENAME) \
-			--exclude rust-*-$(RUSTC_TARGET_ARCH).tar.xz *.xz ; \
+		cd $(HOST_BUILD_DIR) ; \
+		$(PYTHON) x.py --config ./config.toml dist build-manifest cargo llvm-tools \
+			rustc rust-std rust-src ; \
 	)
 endef
 
-define Package/rust
-  SECTION:=lang
-  CATEGORY:=Languages
-  TITLE:=Rust Programming Language Compiler
-  URL:=https://www.rust-lang.org/
-  DEPENDS:=$(RUST_ARCH_DEPENDS) \
-    +pkg-config +libunwind +libopenssl +liblzma +libc
-endef
-
-define Package/rust/description
-  Rust is a multi-paradigm, general-purpose programming language designed for performance
-  and safety, especially safe concurrency. Rust is syntactically similar to C++, but can
-  guarantee memory safety by using a borrow checker to validate references.
-endef
-
-define Package/rust/config
-	source "$(SOURCE)/Config.in"
+define Host/Install
+	( \
+		cd $(HOST_BUILD_DIR)/build/dist ; \
+		find -iname "*.xz" -exec tar -xJf {} \; ; \
+		find ./* -type f -name install.sh -execdir sh {} --prefix=$(CARGO_HOME) --disable-ldconfig \; ; \
+		\
+		sed -e 's|@RUSTC_TARGET_ARCH@|$(RUSTC_TARGET_ARCH)|g' \
+		    -e 's|@TARGET_CC_NOCACHE@|$(TARGET_CC_NOCACHE)|g' \
+		    -e 's|@RUSTC_LDFLAGS@|$(RUSTC_LDFLAGS)|g' \
+			$(CURDIR)/files/cargo-config > $(CARGO_HOME)/config ; \
+	)
 endef
 
 $(eval $(call HostBuild))
